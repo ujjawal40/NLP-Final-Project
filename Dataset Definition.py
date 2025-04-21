@@ -18,12 +18,6 @@ import random
 from transformers import AutoTokenizer, AutoModel
 
 
-
-#GPU check
-is_cuda = torch.cuda.is_available()
-device = torch.device("cuda:0" if is_cuda else "cpu")
-print("Device:", device)
-
 class PubMedQADatasetHF(Dataset):
     def __init__(self, parquet_filename, tokenizer, max_len=256):
         # Dynamic path: look for file inside 'Dataset' directory
