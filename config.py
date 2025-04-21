@@ -11,7 +11,7 @@ TRAIN_FILE = "pubmedqa_artificial.parquet"
 VAL_FILE = "pubmedqa_labeled.parquet"
 
 # Training hyperparameters
-EPOCHS = 5
+EPOCHS = 10
 BATCH_SIZE = 16
 MAX_LEN = 256
 LEARNING_RATE = 1e-3
