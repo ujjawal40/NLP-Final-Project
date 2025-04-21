@@ -13,3 +13,10 @@ from nltk.corpus import stopwords
 nltk.download('stopwords')
 import os
 import random
+# import matplotlib.pyplot as plt
+# import seaborn as sns
+
+#GPU check
+is_cuda = torch.cuda.is_available()
+device = torch.device("cuda:0" if is_cuda else "cpu")
+print("Device:", device)
