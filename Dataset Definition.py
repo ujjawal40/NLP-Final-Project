@@ -26,16 +26,16 @@ print("Device:", device)
 
 class PubMedQADatasetHF(Dataset):
     def __init__(self, parquet_filename, tokenizer, max_len=256):
-        # Dynamic path using os
+        # Dynamic path: look for file inside 'Dataset' directory
         base_dir = os.getcwd()
-        file_path = os.path.join(base_dir, parquet_filename)
+        file_path = os.path.join(base_dir, "Dataset", parquet_filename)
 
-        # Read parquet
+        # Read parquet file
         self.df = pd.read_parquet(file_path)
         self.tokenizer = tokenizer
         self.max_len = max_len
 
-        # Combine question + context
+        # Combine question + context into a single text string
         self.df["text"] = self.df.apply(
             lambda x: x["question"] + " " + " ".join(x["context"]),
             axis=1
@@ -45,7 +45,7 @@ class PubMedQADatasetHF(Dataset):
         self.label_map = {"yes": 0, "no": 1, "maybe": 2}
         self.df["label"] = self.df["final_decision"].map(self.label_map)
 
-        # Pre-tokenize all inputs
+        # Tokenize all examples at once
         self.encodings = self.tokenizer(
             self.df["text"].tolist(),
             padding="max_length",
@@ -58,7 +58,6 @@ class PubMedQADatasetHF(Dataset):
         return len(self.df)
 
     def __getitem__(self, idx):
-        # Return tokenized input and label
         item = {key: val[idx] for key, val in self.encodings.items()}
         item["labels"] = torch.tensor(self.df.iloc[idx]["label"], dtype=torch.long)
         return item
