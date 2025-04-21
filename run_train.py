@@ -1,8 +1,11 @@
 import os
+from datetime import time
+
 import torch
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 from torch import nn
+import tqdm
 
 from config import (
     DEVICE, TOKENIZER_NAME, TRAIN_FILE, VAL_FILE,
@@ -45,11 +48,22 @@ optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
 # 🔁 Training loop
 for epoch in range(EPOCHS):
-    print(f"\n📚 Epoch {epoch+1}/{EPOCHS}")
+    print(f"\n📚 Epoch {epoch + 1}/{EPOCHS}")
 
-    train_loss, train_acc = train(model, train_loader, criterion, optimizer, DEVICE)
-    val_loss, val_acc, val_report = evaluate(model, val_loader, criterion, DEVICE)
+    start_time = time.time()
 
+    # Wrap DataLoader in tqdm
+    train_loader_tqdm = tqdm(train_loader, desc="Training", leave=False)
+    train_loss, train_acc = train(model, train_loader_tqdm, criterion, optimizer, DEVICE)
+
+    val_loader_tqdm = tqdm(val_loader, desc="Validating", leave=False)
+    val_loss, val_acc, val_report = evaluate(model, val_loader_tqdm, criterion, DEVICE)
+
+    elapsed_time = time.time() - start_time
+    minutes = int(elapsed_time // 60)
+    seconds = int(elapsed_time % 60)
+
+    print(f"⏱️  Epoch Duration: {minutes}m {seconds}s")
     print(f"✅ Train Loss: {train_loss:.4f} | Accuracy: {train_acc:.2%}")
     print(f"🧪 Val   Loss: {val_loss:.4f} | Accuracy: {val_acc:.2%}")
     print("📊 Validation Classification Report:\n", val_report)
