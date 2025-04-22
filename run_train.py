@@ -20,10 +20,9 @@ from train import train, evaluate
 
 print(f"🖥️  Using device: {DEVICE}")
 
-# 🌐 Load tokenizer
 tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
 
-# 📂 Load datasets
+
 train_dataset = PubMedQADatasetHF(TRAIN_FILE, tokenizer, max_len=MAX_LEN)
 val_dataset = PubMedQADatasetHF(VAL_FILE, tokenizer, max_len=MAX_LEN)
 
@@ -41,11 +40,10 @@ model = PubMedLSTMClassifier(
     use_attention=USE_ATTENTION
 ).to(DEVICE)
 
-# 🎯 Loss & optimizer
 criterion = nn.NLLLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
-# 🔁 Training loop
+
 for epoch in range(EPOCHS):
     print(f"\n📚 Epoch {epoch + 1}/{EPOCHS}")
 
@@ -62,7 +60,7 @@ for epoch in range(EPOCHS):
     minutes = int(elapsed_time // 60)
     seconds = int(elapsed_time % 60)
 
-    print(f"⏱️  Epoch Duration: {minutes}m {seconds}s")
-    print(f"✅ Train Loss: {train_loss:.4f} | Accuracy: {train_acc:.2%}")
-    print(f"🧪 Val   Loss: {val_loss:.4f} | Accuracy: {val_acc:.2%}")
-    print("📊 Validation Classification Report:\n", val_report)
+    print(f" Epoch Duration: {minutes}m {seconds}s")
+    print(f" Train Loss: {train_loss:.4f} | Accuracy: {train_acc:.2%}")
+    print(f"Val   Loss: {val_loss:.4f} | Accuracy: {val_acc:.2%}")
+    print("Validation Classification Report:\n", val_report)
