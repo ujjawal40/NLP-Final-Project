@@ -1,11 +1,10 @@
 import os
-from datetime import time
-
+import time
 import torch
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 from torch import nn
-import tqdm
+from tqdm import tqdm
 
 from config import (
     DEVICE, TOKENIZER_NAME, TRAIN_FILE, VAL_FILE,
