@@ -8,7 +8,7 @@ TOKENIZER_NAME = "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract"
 
 # File paths
 TRAIN_FILE = "pubmedqa_artificial.parquet"
-VAL_FILE = "pubmedqa_labeled.parquet"
+VAL_FILE   = "pubmedqa_labeled.parquet"
 
 # Training hyperparameters
 EPOCHS = 10
