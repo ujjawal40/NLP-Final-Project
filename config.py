@@ -12,9 +12,9 @@ VAL_FILE   = "pubmedqa_labeled.parquet"
 
 # Training hyperparameters
 EPOCHS = 10
-BATCH_SIZE = 16
+BATCH_SIZE = 32
 MAX_LEN = 256
-LEARNING_RATE = 1e-3
+LEARNING_RATE = 1e-2
 
 # Model architecture
 EMBEDDING_DIM = 128
