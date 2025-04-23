@@ -20,9 +20,14 @@ WEIGHT_DECAY = 0.01
 WARMUP_RATIO = 0.1
 
 # Model architecture
-DROPOUT = 0.4
-USE_ATTENTION = True
-NUM_CLASSES = 3
+EMBEDDING_DIM = 128  # Size of word embeddings
+HIDDEN_DIM = 256     # LSTM hidden state size
+NUM_LAYERS = 2       # Number of LSTM layers
+DROPOUT = 0.4        # Dropout probability
+USE_ATTENTION = True  # Whether to use attention mechanism
+NUM_CLASSES = 3      # yes/no/maybe
+BIDIRECTIONAL = True # Whether LSTM is bidirectional
+
 
 # Remove or update the TrainingArguments if not using Transformers trainer
 # Simple version compatible with older Transformers:
