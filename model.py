@@ -7,7 +7,6 @@ class PubMedLSTMClassifier(nn.Module):
     def __init__(self, vocab_size, embedding_dim=128, hidden_dim=256, output_dim=3,
                  num_layers=2, drop_prob=0.5, bidirectional=True, use_attention=True):
         super(PubMedLSTMClassifier, self).__init__()
-
         self.use_attention = use_attention
         self.bidirectional = bidirectional
         self.hidden_dim = hidden_dim
@@ -40,26 +39,20 @@ class PubMedLSTMClassifier(nn.Module):
         # Output layer
         self.fc = nn.Linear(hidden_dim * self.num_directions, output_dim)
 
-    def forward(self, x):
-        # Embedding layer
-        embeds = self.embedding(x)  # [batch_size, seq_len, embedding_dim]
+    def forward(self, input_ids, attention_mask=None):
+        """Modified forward to accept dictionary unpacking"""
+        x = input_ids  # We only need the input_ids for LSTM
 
-        # LSTM layer
-        lstm_out, _ = self.lstm(embeds)  # [batch_size, seq_len, hidden_dim * num_directions]
+        embeds = self.embedding(x)
+        lstm_out, _ = self.lstm(embeds)
 
-        # Attention mechanism
         if self.use_attention:
-            # Calculate attention weights
-            attn_weights = self.attention(lstm_out)  # [batch_size, seq_len, 1]
-            attn_weights = F.softmax(attn_weights, dim=1)
-
-            # Apply attention weights
-            context = torch.sum(attn_weights * lstm_out, dim=1)  # [batch_size, hidden_dim * num_directions]
+            attn_weights = torch.tanh(self.attn(lstm_out))
+            attn_weights = torch.softmax(attn_weights, dim=1)
+            context = torch.sum(attn_weights * lstm_out, dim=1)
         else:
-            # Use last hidden state
             context = lstm_out[:, -1, :]
 
-        # Dropout and output
         output = self.dropout(context)
         logits = self.fc(output)
         return F.log_softmax(logits, dim=1)
