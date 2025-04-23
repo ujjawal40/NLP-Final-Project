@@ -1,84 +1,110 @@
-import numpy as np
-import pandas as pd
-import re
-from collections import Counter
-import torch
-import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader, TensorDataset
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, classification_report
-from sklearn.preprocessing import LabelEncoder
-import nltk
-from nltk.corpus import stopwords
 import os
+import pandas as pd
+import torch
+from torch.utils.data import Dataset
 import random
-import matplotlib.pyplot as plt
-import seaborn as sns
-from transformers import AutoTokenizer, AutoModel
+from typing import List
 
-nltk.download('stopwords')
 
 class PubMedQADatasetHF(Dataset):
-    def __init__(self, parquet_filename, tokenizer, max_len=256, show_graph = True):
-        base_dir = os.getcwd()
-        file_path = os.path.join(base_dir, "Dataset", parquet_filename)
+    def __init__(self, parquet_filename, tokenizer, max_len=256, augment=False, show_graph=True):
+        # Load data
+        self.df = pd.read_parquet(os.path.join("Dataset", parquet_filename))
 
-        self.df = pd.read_parquet(file_path)
+        # Validate and clean data
+        self._clean_data()
+
         self.tokenizer = tokenizer
         self.max_len = max_len
+        self.augment = augment
+        self.show_graph = show_graph
 
-        # Combine question + context
-        self.df["text"] = self.df.apply(
-            lambda x: x["question"] + " " + " ".join(x["context"]),
-            axis=1
+        # Data augmentation if enabled
+        if self.augment:
+            self._augment_data()
+
+        # Initialize encodings and labels
+        self.encodings = None
+        self.labels = None
+        self._preprocess_data()
+
+    def _clean_data(self):
+        """Ensure all text fields are strings and contexts are properly formatted"""
+        self.df["question"] = self.df["question"].astype(str)
+
+        # Convert context list elements to strings
+        self.df["context"] = self.df["context"].apply(
+            lambda ctx: [str(x) for x in ctx] if isinstance(ctx, list) else [str(ctx)]
         )
 
-        # Label mapping
-        self.label_map = {"yes": 0, "no": 1, "maybe": 2}
-        self.df["label"] = self.df["final_decision"].map(self.label_map)
+    def _preprocess_data(self):
+        """Tokenize and prepare all samples"""
+        texts = []
+        for _, row in self.df.iterrows():
+            # Combine question and context with proper separation
+            text = row["question"] + " " + " ".join(row["context"])
+            texts.append(text.strip())
 
-        # 📊 Class Distribution
-        class_counts = self.df["final_decision"].value_counts()
-        print("\n🔢 Number of classes:", len(class_counts))
-        print("🧮 Class distribution:\n", class_counts)
-
-        if show_graph:
-
-            plt.figure(figsize=(6, 4))
-            sns.barplot(x=class_counts.index, y=class_counts.values, palette="magma")
-            plt.title("Class Distribution in PubMedQA")
-            plt.xlabel("Class")
-            plt.ylabel("Count")
-            plt.grid(axis='y', linestyle='--', alpha=0.6)
-            plt.tight_layout()
-            plt.show()
-
-        # Pre-tokenize
+        # Tokenize all texts
         self.encodings = self.tokenizer(
-            self.df["text"].tolist(),
+            texts,
             padding="max_length",
             truncation=True,
             max_length=self.max_len,
             return_tensors="pt"
         )
 
+        # Convert labels to tensor
+        self.labels = torch.tensor(
+            self.df["final_decision"].map({"yes": 0, "no": 1, "maybe": 2}).values,
+            dtype=torch.long
+        )
+
     def __len__(self):
         return len(self.df)
 
     def __getitem__(self, idx):
-        item = {key: val[idx] for key, val in self.encodings.items()}
-        item["labels"] = torch.tensor(self.df.iloc[idx]["label"], dtype=torch.long)
-        return item
+        return {
+            'input_ids': self.encodings['input_ids'][idx],
+            'attention_mask': self.encodings['attention_mask'][idx],
+            'labels': self.labels[idx]
+        }
 
+    def _augment_data(self):
+        """Medical-specific data augmentation"""
+        new_rows = []
+        for _, row in self.df.iterrows():
+            # Skip augmentation for maybe class to avoid confusion
+            if row["final_decision"] == "maybe":
+                continue
 
+            # Question paraphrasing
+            if random.random() < 0.3:
+                new_q = self._paraphrase_question(row['question'])
+                new_rows.append({
+                    'question': new_q,
+                    'context': row['context'],
+                    'final_decision': row['final_decision']
+                })
 
-def main():
-    # Load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")  # or any other HF model
+        if new_rows:
+            self.df = pd.concat([self.df, pd.DataFrame(new_rows)], ignore_index=True)
 
-    # Load dataset and trigger analysis
-    _ = PubMedQADatasetHF("pubmedqa_artificial.parquet", tokenizer)
+    def _paraphrase_question(self, question):
+        """Simple question paraphrasing for medical text"""
+        paraphrases = {
+            "Does": "Is there evidence that",
+            "Is": "Does the evidence show that",
+            "Are": "Do the findings indicate that",
+            "Can": "Is it possible that",
+            "Should": "Is it recommended that"
+        }
+        for k, v in paraphrases.items():
+            if question.startswith(k):
+                return question.replace(k, v, 1)
+        return question
 
-
-if __name__ == "__main__":
-    main()
+    def get_class_weights(self):
+        """Calculate class weights for imbalance handling"""
+        class_counts = self.df["final_decision"].value_counts().sort_index()
+        return 1. / class_counts.values
