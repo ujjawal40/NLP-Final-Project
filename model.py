@@ -1,48 +1,15 @@
-import torch
-import torch.nn as nn
+from transformers import AutoModel
 
-class PubMedLSTMClassifier(nn.Module):
-    def __init__(self, vocab_size, embedding_dim=128, hidden_dim=256, output_dim=3,
-                 num_layers=2, drop_prob=0.5, bidirectional=True, use_attention=True):
-        super(PubMedLSTMClassifier, self).__init__()
 
-        self.use_attention = use_attention
-        self.bidirectional = bidirectional
-        self.hidden_dim = hidden_dim
-        self.num_directions = 2 if bidirectional else 1
+class PubMedBERTClassifier(nn.Module):
+    def __init__(self, model_name=TOKENIZER_NAME, num_classes=NUM_CLASSES, dropout=DROPOUT):
+        super().__init__()
+        self.bert = AutoModel.from_pretrained(model_name)
+        self.dropout = nn.Dropout(dropout)
+        self.classifier = nn.Linear(self.bert.config.hidden_size, num_classes)
 
-        self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
-
-        self.lstm = nn.LSTM(
-            embedding_dim,
-            hidden_dim,
-            num_layers=num_layers,
-            bidirectional=bidirectional,
-            dropout=drop_prob,
-            batch_first=True
-        )
-
-        self.dropout = nn.Dropout(drop_prob)
-
-        if use_attention:
-            self.attn = nn.Linear(hidden_dim * self.num_directions, 1)
-
-        self.fc = nn.Linear(hidden_dim * self.num_directions, output_dim)
-        self.softmax = nn.LogSoftmax(dim=1)
-
-    def forward(self, x):
-        embeds = self.embedding(x)
-        lstm_out, _ = self.lstm(embeds)  # [B, T, H*2]
-
-        if self.use_attention:
-            # Attention mechanism
-            attn_weights = torch.tanh(self.attn(lstm_out))      # [B, T, 1]
-            attn_weights = torch.softmax(attn_weights, dim=1)   # [B, T, 1]
-            context = torch.sum(attn_weights * lstm_out, dim=1) # [B, H*2]
-        else:
-            # Use the last output from the sequence
-            context = lstm_out[:, -1, :]
-
-        output = self.dropout(context)
-        logits = self.fc(output)
-        return self.softmax(logits)
+    def forward(self, input_ids, attention_mask=None):
+        outputs = self.bert(input_ids, attention_mask=attention_mask)
+        pooled_output = outputs.last_hidden_state[:, 0, :]  # Use [CLS] token
+        pooled_output = self.dropout(pooled_output)
+        return self.classifier(pooled_output)
