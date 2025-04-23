@@ -1,15 +1,19 @@
-from transformers import AutoModel
-
-
-class PubMedBERTClassifier(nn.Module):
-    def __init__(self, model_name=TOKENIZER_NAME, num_classes=NUM_CLASSES, dropout=DROPOUT):
+class HybridPubMedModel(nn.Module):
+    def __init__(self, bert_model_name, hidden_dim, num_classes, lstm_layers=2):
         super().__init__()
-        self.bert = AutoModel.from_pretrained(model_name)
-        self.dropout = nn.Dropout(dropout)
-        self.classifier = nn.Linear(self.bert.config.hidden_size, num_classes)
+        self.bert = AutoModel.from_pretrained(bert_model_name)
+        self.lstm = nn.LSTM(
+            input_size=self.bert.config.hidden_size,
+            hidden_size=hidden_dim,
+            num_layers=lstm_layers,
+            bidirectional=True,
+            batch_first=True
+        )
+        self.classifier = nn.Linear(hidden_dim * 2, num_classes)
 
     def forward(self, input_ids, attention_mask=None):
-        outputs = self.bert(input_ids, attention_mask=attention_mask)
-        pooled_output = outputs.last_hidden_state[:, 0, :]  # Use [CLS] token
-        pooled_output = self.dropout(pooled_output)
-        return self.classifier(pooled_output)
+        with torch.no_grad():  # Freeze BERT initially
+            bert_output = self.bert(input_ids, attention_mask=attention_mask)
+        sequence_output = bert_output.last_hidden_state
+        lstm_out, _ = self.lstm(sequence_output)
+        return self.classifier(lstm_out[:, -1, :])
