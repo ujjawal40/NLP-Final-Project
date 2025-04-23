@@ -12,9 +12,25 @@ from Dataset import PubMedQADatasetHF
 from model import PubMedLSTMClassifier
 from train import train, evaluate
 
+from config import (
+    DEVICE,
+    TOKENIZER_NAME,
+    TRAIN_FILE,
+    VAL_FILE,
+    EPOCHS,
+    BATCH_SIZE,
+    MAX_LEN,
+    LEARNING_RATE,
+    EMBEDDING_DIM,  # Now properly imported
+    HIDDEN_DIM,
+    NUM_CLASSES,
+    NUM_LAYERS,
+    DROPOUT,
+    USE_ATTENTION
+)
 
 def main():
-    # 🚀 Experiment Tracking
+
     wandb.init(project="pubmed-qa", config={
         "learning_rate": LEARNING_RATE,
         "batch_size": BATCH_SIZE,
@@ -24,17 +40,17 @@ def main():
 
     print(f"🖥️ Using device: {DEVICE}")
 
-    # 🏗️ Initialize components
+
     tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
 
-    # 📊 Datasets
+
     train_dataset = PubMedQADatasetHF(TRAIN_FILE, tokenizer, max_len=MAX_LEN, augment=True)
     val_dataset = PubMedQADatasetHF(VAL_FILE, tokenizer, max_len=MAX_LEN)
 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE * 2, num_workers=4)
 
-    # 🧠 Model
+
     model = PubMedLSTMClassifier(
         vocab_size=tokenizer.vocab_size,
         embedding_dim=EMBEDDING_DIM,
