@@ -2,23 +2,21 @@ import torch
 from sklearn.metrics import classification_report
 
 
-def train(model, dataloader, criterion, optimizer, device, scheduler=None):
+def train(model, dataloader, criterion, optimizer, device, scheduler=None):  # Added scheduler as optional
     model.train()
     total_loss, correct, total = 0, 0, 0
 
     for batch in dataloader:
-        inputs = {k: v.to(device) for k, v in batch.items() if k != 'labels'}
-        labels = batch['labels'].to(device)
+        input_ids = batch["input_ids"].to(device)
+        labels = batch["labels"].to(device)
 
         optimizer.zero_grad()
-        outputs = model(**inputs)
+        outputs = model(input_ids)
         loss = criterion(outputs, labels)
-
-        # Gradient accumulation for larger effective batch size
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)  # Gradient clipping
         optimizer.step()
-        if scheduler:
+
+        if scheduler:  # Step the scheduler if provided
             scheduler.step()
 
         total_loss += loss.item()
@@ -27,6 +25,8 @@ def train(model, dataloader, criterion, optimizer, device, scheduler=None):
         total += labels.size(0)
 
     return total_loss / len(dataloader), correct / total
+
+
 def evaluate(model, dataloader, criterion, device):
     model.eval()
     total_loss, correct, total = 0, 0, 0
@@ -34,12 +34,14 @@ def evaluate(model, dataloader, criterion, device):
 
     with torch.no_grad():
         for batch in dataloader:
-            input_ids, labels = batch["input_ids"].to(device), batch["labels"].to(device)
-            output = model(input_ids)
-            loss = criterion(output, labels)
+            input_ids = batch["input_ids"].to(device)
+            labels = batch["labels"].to(device)
+
+            outputs = model(input_ids)
+            loss = criterion(outputs, labels)
 
             total_loss += loss.item()
-            preds = torch.argmax(output, dim=1)
+            preds = torch.argmax(outputs, dim=1)
             correct += (preds == labels).sum().item()
             total += labels.size(0)
 
