@@ -105,6 +105,10 @@ class PubMedQADatasetHF(Dataset):
         return question
 
     def get_class_weights(self):
-        """Calculate class weights for imbalance handling"""
-        class_counts = self.df["final_decision"].value_counts().sort_index()
+        """Ensure weights for all 3 classes"""
+        class_counts = self.df["final_decision"].value_counts().reindex(
+            ["yes", "no", "maybe"],
+            fill_value=1e-6  # Prevent division by zero
+        )
+        print("Class distribution:\n", class_counts)  # Debug output
         return 1. / class_counts.values
