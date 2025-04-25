@@ -1,0 +1,10 @@
+data:
+  raw:
+    artificial: "../Dataset/pubmedqa_artificial.parquet"
+    labeled: "../Dataset/pubmedqa_labeled.parquet"
+  processed: "../Dataset/processed/"
+  vector_db: "../Dataset/processed/vector_db.faiss"
+
+models:
+  meditron: "epfl-llm/meditron-7b"
+  embedding: "sentence-transformers/all-mpnet-base-v2"
