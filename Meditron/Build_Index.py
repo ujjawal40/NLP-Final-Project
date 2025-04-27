@@ -1,42 +1,39 @@
 import time
+from pathlib import Path
 from dataloader import PubMedQADataLoader
 from retriever import PubMedRetriever
-from pathlib import Path
 
 
 def main():
-    print(" Starting index build process...")
-    start_time = time.time()
-
     try:
-        # Initialize components
+        print("Starting index build process...")
+        start_time = time.time()
+
+        # Initialize loader with exact paths
         loader = PubMedQADataLoader()
-        retriever = PubMedRetriever()
 
-        print(" Loading dataset...")
+        # Load data
+        print("Loading dataset...")
         df = loader.load_parquets()
-        print(f" Loaded {len(df)} records")
+        print(f"Successfully loaded {len(df)} records")
 
+        # Convert to documents
         print("Converting to documents...")
         documents = loader.to_documents(df)
-        print(f" Created {len(documents)} document objects")
+        print(f"Created {len(documents)} document objects")
 
-        print(" Building FAISS index...")
+        # Build index
+        print("Building FAISS index...")
+        retriever = PubMedRetriever({
+            "index_path": str(Path.home() / "NLP-Final-Project" / "Dataset" / "processed" / "vector_db"),
+            "embedding_model": "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract"
+        })
         retriever.build_index(documents)
 
-        # Verify index was built
-        index_path = Path("data/processed/vector_db.faiss")
-        if index_path.exists():
-            print(f" Success! Index built at {index_path}")
-            print(f" Total time: {time.time() - start_time:.2f} seconds")
-        else:
-            raise FileNotFoundError("Index file not created")
+        print(f"✅ Build completed in {time.time() - start_time:.2f} seconds")
 
     except Exception as e:
-        print(f" Error during index build: {str(e)}")
-        # Clean up partial files if needed
-        if 'retriever' in locals() and hasattr(retriever, 'vector_db'):
-            del retriever.vector_db
+        print(f"❌ Error: {str(e)}")
         raise
 
 
