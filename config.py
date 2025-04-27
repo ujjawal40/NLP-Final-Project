@@ -27,7 +27,7 @@ class PubMedQAConfig:
 
     # Model architecture
     EMBEDDING_DIM: int = 256  # Increased for better representations
-    HIDDEN_DIM: int = 384  # Scaled with embedding dim
+    HIDDEN_DIM: int = 512  # Scaled with embedding dim
     NUM_LAYERS: int = 2
     DROPOUT: float = 0.3  # Slightly reduced
     USE_ATTENTION: bool = True
