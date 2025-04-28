@@ -1,48 +1,39 @@
-import torch
-import numpy as np
-from transformers import AutoTokenizer, AutoModel
-from langchain_community.vectorstores import FAISS
-from pathlib import Path
-from tqdm import tqdm
+# retriever.py
 
+import torch
+from pathlib import Path
+from datasets import load_from_disk
+from sentence_transformers import SentenceTransformer
 
 class PubMedRetriever:
     def __init__(self):
-        # 1. Hardcoded paths matching your EXACT files
-        self.index_dir = Path("/home/ubuntu/NLP-Final-Project/Dataset/processed/vector_db")
-        self.index_name = "index"  # Matches your index.faiss/index.pkl
-
-        # 2. Initialize model and tokenizer directly
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-mpnet-base-v2")
-        self.model = AutoModel.from_pretrained("sentence-transformers/all-mpnet-base-v2").to(self.device)
-        self.model.eval()
 
-        # 3. Load index immediately
-        self.vector_db = self._load_faiss_index()
+        project_root = Path(__file__).parents[1]
+        processed = project_root / "Dataset" / "processed"
 
-    def _load_faiss_index(self):
-        """Load existing FAISS index with proper embedding handling"""
-        return FAISS.load_local(
-            folder_path=str(self.index_dir),
-            index_name=self.index_name,
-            embeddings=self._embed_query,  # Only needs the query embedding function
-            allow_dangerous_deserialization=True
+        dataset_dir = processed / "contexts_dataset"
+        index_path = processed / "vector_db" / "index.faiss"
+
+        self.dataset = load_from_disk(str(dataset_dir))
+
+        # **IMPORTANT: Load FAISS index manually**
+        self.dataset.load_faiss_index("embeddings", str(index_path))
+
+        self.embed_model = SentenceTransformer("microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract", device=self.device)
+
+    def retrieve(self, query, top_k=5):
+        encoded_input = self.embed_model.encode(
+            [query],  # <-- Notice the []
+            convert_to_tensor=True,
+            device=self.device,
+            normalize_embeddings=True
+        ).cpu().numpy()
+
+        scores, samples = self.dataset.get_nearest_examples_batch(
+            "embeddings",
+            queries=encoded_input,
+            k=top_k,
         )
 
-    def _embed_query(self, text):
-        """Embed single query (required by FAISS)"""
-        with torch.no_grad():
-            inputs = self.tokenizer(
-                text,
-                padding="max_length",
-                truncation=True,
-                max_length=512,
-                return_tensors="pt"
-            ).to(self.device)
-            outputs = self.model(**inputs)
-        return outputs.last_hidden_state[:, 0].float().cpu().numpy()[0]  # Return numpy array
-
-    def retrieve(self, query, k=3):
-        """Simplified retrieval"""
-        return self.vector_db.similarity_search(query, k=k)
+        return samples
