@@ -1,127 +1,100 @@
 # Build_Index.py
 
-import json
-import time
-import shutil
 import torch
-import nltk
-import pandas as pd
-
 from pathlib import Path
+from datasets import load_from_disk
+import faiss
+import numpy as np
+import logging
 from tqdm import tqdm
-from sentence_transformers import SentenceTransformer
-from langchain_community.vectorstores import FAISS
-from langchain.embeddings import SentenceTransformerEmbeddings
+import shutil
+import yaml
 
-from dataloader import PubMedQADataLoader
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-nltk.download("punkt", quiet=True)
-
-# size of each chunk and overlap stride
-CHUNK_SIZE = 512
-STRIDE     = 256
-
-def chunk_text(text: str, tokenizer) -> list[str]:
-    """
-    Split `text` into overlapping chunks of CHUNK_SIZE tokens,
-    moving forward by STRIDE each time.
-    """
-    tokens = tokenizer.tokenize(text)
-    chunks = []
-    for start in range(0, len(tokens), STRIDE):
-        slice_ = tokens[start : start + CHUNK_SIZE]
-        chunk = tokenizer.convert_tokens_to_string(slice_)
-        chunks.append(chunk)
-        if start + CHUNK_SIZE >= len(tokens):
-            break
-    return chunks
 
 def main():
+    # Load paths from yaml
+    with open('path.yaml', 'r') as f:
+        paths = yaml.safe_load(f)
+
+    # Set up paths
     project_root = Path(__file__).parent.parent
-    dataset_dir  = project_root / "Dataset"
-    processed    = dataset_dir / "processed"
-    contexts_f   = processed / "contexts.jsonl"
-    vector_db    = processed / "vector_db"
+    dataset_dir = project_root / "Dataset" / "processed" / "contexts_dataset"
+    index_dir = project_root / "Dataset" / "processed" / "vector_db"
+    index_path = index_dir / "index.faiss"
 
-    # 1) Remove old index folder
-    if vector_db.exists():
-        print("Removing old vector_db folder...")
-        shutil.rmtree(vector_db)
-    processed.mkdir(parents=True, exist_ok=True)
-    vector_db.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Project root: {project_root}")
+    logger.info(f"Dataset directory: {dataset_dir}")
+    logger.info(f"Index directory: {index_dir}")
 
-    # 2) Load PubMedQA data
-    print("1) Loading PubMedQA data…")
-    loader = PubMedQADataLoader()
-    df = loader.load_parquets()  # expects columns: question, context, pubid, final_decision
-    print(f"   Loaded {len(df)} examples\n")
+    # Remove old index if it exists
+    if index_dir.exists():
+        logger.info("Removing old index directory...")
+        shutil.rmtree(index_dir)
+    index_dir.mkdir(parents=True, exist_ok=True)
 
-    # 3) Initialize embedding model
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"2) Initializing SentenceTransformer on {device}…")
-    embedder = SentenceTransformer("sentence-transformers/all-mpnet-base-v2", device=device)
-    tokenizer = embedder.tokenizer
-    print("   Done.\n")
+    # Load dataset
+    logger.info(f"Loading dataset from {dataset_dir}")
+    try:
+        dataset = load_from_disk(str(dataset_dir))
+        logger.info(f"Dataset loaded successfully with {len(dataset)} examples")
+    except Exception as e:
+        logger.error(f"Failed to load dataset: {str(e)}")
+        return
 
-    # 4) Chunk texts and write to contexts.jsonl
-    print(f"3) Writing chunks to {contexts_f}…")
-    idx = 0
-    with contexts_f.open("w", encoding="utf-8") as fout:
-        for _, row in tqdm(df.iterrows(), total=len(df)):
-            question = str(row.get("question", ""))
-            raw_ctx = row.get("context", [])
-            if not isinstance(raw_ctx, list):
-                raw_ctx = [raw_ctx]
+    # Get embeddings
+    logger.info("Extracting embeddings...")
+    embeddings = []
+    valid_indices = []
 
-            # coerce each context item to string
-            contexts: list[str] = []
-            for c in raw_ctx:
-                if isinstance(c, str):
-                    contexts.append(c)
-                elif isinstance(c, dict):
-                    # adjust key if needed
-                    text = c.get("text") or c.get("page_content") or ""
-                    contexts.append(str(text))
-                else:
-                    contexts.append(str(c))
+    for i in tqdm(range(len(dataset)), desc="Processing embeddings"):
+        try:
+            emb = dataset[i]["embeddings"]
+            if emb is not None and len(emb) > 0:
+                embeddings.append(emb)
+                valid_indices.append(i)
+        except Exception as e:
+            logger.error(f"Error processing embedding {i}: {str(e)}")
+            continue
 
-            full_text = question + " " + " ".join(contexts)
-            for chunk in chunk_text(full_text, tokenizer):
-                record = {
-                    "id": idx,
-                    "text": chunk,
-                    "meta": {
-                        "pubid": row.get("pubid"),
-                        "decision": row.get("final_decision")
-                    }
-                }
-                fout.write(json.dumps(record) + "\n")
-                idx += 1
+    if not embeddings:
+        logger.error("No valid embeddings found!")
+        return
 
-    print(f"   Wrote {idx} chunks\n")
+    # Convert to numpy array
+    embeddings = np.array(embeddings, dtype=np.float32)
+    logger.info(f"Embeddings shape: {embeddings.shape}")
 
-    # 5) Build & save FAISS index using LangChain from_texts
-    print("4) Building FAISS index…")
-    # load texts and metadata back
-    texts, metadatas = [], []
-    with contexts_f.open("r", encoding="utf-8") as fin:
-        for line in fin:
-            rec = json.loads(line)
-            texts.append(rec["text"])
-            metadatas.append(rec["meta"])
+    # Build FAISS index
+    logger.info("Building FAISS index...")
+    dimension = embeddings.shape[1]
 
-    # wrap embedder for LangChain
-    lc_embed = SentenceTransformerEmbeddings(
-        model_name="sentence-transformers/all-mpnet-base-v2",
-        model_kwargs={"device": device}
-    )
+    # Create index
+    index = faiss.IndexFlatL2(dimension)
 
-    # build index
-    vectorstore = FAISS.from_texts(texts, lc_embed, metadatas=metadatas)
+    # Add vectors to index
+    index.add(embeddings)
 
-    # save to disk
-    vectorstore.save_local(folder_path=str(vector_db), index_name="index")
-    print(f"   FAISS index built and saved to {vector_db}")
+    # Save index
+    logger.info(f"Saving index to {index_path}")
+    faiss.write_index(index, str(index_path))
+
+    # Verify index
+    logger.info("Verifying index...")
+    try:
+        test_index = faiss.read_index(str(index_path))
+        if test_index.ntotal == len(embeddings):
+            logger.info("✅ Index verified successfully")
+            logger.info(f"Index size: {test_index.ntotal}")
+            logger.info(f"Dataset size: {len(dataset)}")
+            logger.info(f"Valid embeddings: {len(valid_indices)}")
+        else:
+            logger.error("❌ Index verification failed: size mismatch")
+    except Exception as e:
+        logger.error(f"❌ Error verifying index: {str(e)}")
+
 
 if __name__ == "__main__":
     main()
