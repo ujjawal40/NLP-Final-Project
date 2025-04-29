@@ -3,6 +3,8 @@ from retriever import PubMedRetriever
 from Generator import MedicalGenerator
 from typing import List, Dict, Any
 import torch
+import time
+from visualize_performance import PerformanceVisualizer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -37,10 +39,12 @@ def main():
     logger.info("Initializing RAG components...")
     retriever = PubMedRetriever()
     generator = MedicalGenerator()
+    visualizer = PerformanceVisualizer()
 
     logger.info("RAG pipeline ready!")
     logger.info("Type 'exit' to quit")
     logger.info("Type 'help' for example questions")
+    logger.info("Type 'report' to generate performance report")
 
     while True:
         try:
@@ -55,9 +59,15 @@ def main():
                 print("2. Is there a relationship between sleep duration and cardiovascular disease?")
                 print("3. Does vitamin D supplementation reduce the risk of COVID-19 infection?")
                 continue
+            elif query.lower() == 'report':
+                visualizer.generate_report()
+                continue
             elif not query:
                 print("Please enter a question!")
                 continue
+
+            # Start timing
+            start_time = time.time()
 
             # Retrieve relevant contexts
             logger.info("Retrieving relevant contexts...")
@@ -90,6 +100,9 @@ def main():
             answer = generator.generate(query, retrieved_contexts)
             pred_cleaned = clean_prediction(answer)
 
+            # Calculate query time
+            query_time = time.time() - start_time
+
             # Print results
             print("\n" + "=" * 50)
             print(f"QUESTION: {query}")
@@ -101,6 +114,15 @@ def main():
             feedback = input("\nWas this answer helpful? (y/n): ").lower()
             if feedback == 'n':
                 logger.info("Thank you for your feedback. We'll use this to improve the system.")
+
+            # Log the result for visualization
+            visualizer.log_query_result(
+                query=query,
+                contexts=retrieved_results,
+                answer=answer,
+                query_time=query_time,
+                feedback=feedback
+            )
 
         except Exception as e:
             logger.error(f"Error processing query: {str(e)}")
