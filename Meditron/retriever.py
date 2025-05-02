@@ -11,6 +11,7 @@ import nltk
 from nltk.corpus import wordnet
 import logging
 import yaml
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -21,35 +22,57 @@ class PubMedRetriever:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         logger.info(f"Using device: {self.device}")
 
+        # Get the current directory and project root
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(current_dir)  # Go up one level to NLP-Final-Project
+
+        logger.info(f"Current directory: {current_dir}")
+        logger.info(f"Project root: {project_root}")
+
         # Load paths from yaml
-        with open('path.yaml', 'r') as f:
+        yaml_path = os.path.join(current_dir, 'path.yaml')
+        with open(yaml_path, 'r') as f:
             paths = yaml.safe_load(f)
 
-        # Set up paths
-        project_root = Path(__file__).parent.parent
-        dataset_dir = project_root / "Dataset" / "processed" / "contexts_dataset"
-        index_path = project_root / "Dataset" / "processed" / "vector_db" / "index.faiss"
+        # Set up paths using absolute paths from project root
+        dataset_dir = os.path.join(project_root, "Dataset/processed/contexts_dataset")
+        index_path = os.path.join(project_root, "Dataset/processed/vector_db/index.faiss")
 
-        logger.info(f"Project root: {project_root}")
         logger.info(f"Dataset directory: {dataset_dir}")
         logger.info(f"Index path: {index_path}")
 
+        # Check if directories exist
+        logger.info(f"Checking if dataset directory exists: {os.path.exists(dataset_dir)}")
+        logger.info(f"Checking if index file exists: {os.path.exists(index_path)}")
+
+        # List contents of dataset directory
+        if os.path.exists(dataset_dir):
+            logger.info(f"Contents of dataset directory: {os.listdir(dataset_dir)}")
+
         try:
-            self.dataset = load_from_disk(str(dataset_dir))
-            self.dataset.load_faiss_index("embeddings", str(index_path))
-            logger.info("Dataset and index loaded successfully")
+            logger.info("Attempting to load dataset...")
+            self.dataset = load_from_disk(dataset_dir)
+            logger.info("Dataset loaded successfully")
+            logger.info(f"Dataset size: {len(self.dataset)}")
+
+            logger.info("Attempting to load FAISS index...")
+            self.dataset.load_faiss_index("embeddings", index_path)
+            logger.info("FAISS index loaded successfully")
         except Exception as e:
             logger.error(f"Error loading dataset or index: {str(e)}")
+            logger.error(f"Error type: {type(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             raise
 
         # Initialize models - using medical-specific model
         self.embed_model = SentenceTransformer(
-            "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract",
+            paths['model_path'],
             device=self.device
         )
 
         # Initialize reranker with medical model
-        self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2', device=self.device)
+        self.reranker = CrossEncoder(paths['reranker_path'], device=self.device)
 
         # Initialize BM25
         self._initialize_bm25()
@@ -82,7 +105,7 @@ class PubMedRetriever:
             'clinical': ['medical', 'therapeutic', 'healthcare'],
             'medical': ['clinical', 'therapeutic', 'healthcare'],
             'health': ['wellness', 'wellbeing', 'physical condition'],
-            
+
             # Anatomy and Physiology
             'cell': ['cellular', 'cytological', 'tissue unit'],
             'tissue': ['cellular structure', 'biological material'],
@@ -92,7 +115,7 @@ class PubMedRetriever:
             'structure': ['anatomical organization', 'morphology'],
             'development': ['growth', 'maturation', 'progression'],
             'regulation': ['control', 'modulation', 'homeostasis'],
-            
+
             # Molecular Biology
             'gene': ['genetic sequence', 'DNA segment', 'genomic region'],
             'protein': ['polypeptide', 'amino acid chain', 'molecular structure'],
@@ -102,7 +125,7 @@ class PubMedRetriever:
             'mutation': ['genetic change', 'sequence alteration', 'genomic variation'],
             'expression': ['gene activity', 'transcription', 'translation'],
             'regulation': ['control', 'modulation', 'homeostasis'],
-            
+
             # Immunology
             'immune': ['immunological', 'immunologic', 'defense system'],
             'antibody': ['immunoglobulin', 'immune protein', 'defense molecule'],
@@ -112,7 +135,7 @@ class PubMedRetriever:
             'vaccine': ['immunization', 'preventive treatment'],
             'immunity': ['immune protection', 'defense mechanism'],
             'autoimmune': ['self-immune', 'auto-reactive'],
-            
+
             # Pharmacology
             'drug': ['medication', 'pharmaceutical', 'therapeutic agent'],
             'therapy': ['treatment', 'intervention', 'management'],
@@ -122,7 +145,7 @@ class PubMedRetriever:
             'pharmacodynamics': ['drug action', 'drug effect'],
             'side effect': ['adverse effect', 'complication', 'reaction'],
             'interaction': ['drug interaction', 'combined effect'],
-            
+
             # Oncology
             'cancer': ['malignancy', 'neoplasm', 'tumor'],
             'tumor': ['neoplasm', 'growth', 'mass'],
@@ -132,7 +155,7 @@ class PubMedRetriever:
             'proliferation': ['cell growth', 'multiplication', 'expansion'],
             'invasion': ['tissue infiltration', 'spread'],
             'malignant': ['cancerous', 'aggressive', 'invasive'],
-            
+
             # Cardiovascular
             'heart': ['cardiac', 'cardiovascular', 'myocardial'],
             'blood': ['hematological', 'circulatory', 'vascular'],
@@ -142,7 +165,7 @@ class PubMedRetriever:
             'cardiac': ['heart-related', 'myocardial'],
             'vascular': ['blood vessel', 'circulatory'],
             'hypertension': ['high blood pressure', 'elevated pressure'],
-            
+
             # Neurology
             'brain': ['cerebral', 'neurological', 'neural'],
             'nerve': ['neural', 'neuronal', 'nervous'],
@@ -152,7 +175,7 @@ class PubMedRetriever:
             'cognitive': ['mental', 'intellectual', 'brain function'],
             'behavioral': ['psychological', 'mental', 'cognitive'],
             'sensory': ['sensation', 'perception', 'sensory system'],
-            
+
             # Endocrinology
             'hormone': ['endocrine signal', 'chemical messenger'],
             'endocrine': ['hormonal', 'glandular'],
@@ -162,7 +185,7 @@ class PubMedRetriever:
             'thyroid': ['thyroid gland', 'endocrine organ'],
             'adrenal': ['adrenal gland', 'endocrine organ'],
             'pituitary': ['pituitary gland', 'master gland'],
-            
+
             # Respiratory
             'lung': ['pulmonary', 'respiratory', 'alveolar'],
             'airway': ['respiratory tract', 'breathing passage'],
@@ -172,7 +195,7 @@ class PubMedRetriever:
             'asthma': ['bronchial asthma', 'reactive airway'],
             'pneumonia': ['lung infection', 'pulmonary infection'],
             'bronchitis': ['airway inflammation', 'bronchial inflammation'],
-            
+
             # Gastroenterology
             'stomach': ['gastric', 'digestive organ'],
             'intestine': ['bowel', 'digestive tract'],
@@ -182,7 +205,7 @@ class PubMedRetriever:
             'absorption': ['nutrient uptake', 'molecular uptake'],
             'secretion': ['glandular output', 'fluid production'],
             'motility': ['movement', 'peristalsis'],
-            
+
             # Musculoskeletal
             'muscle': ['muscular', 'myogenic', 'muscle tissue'],
             'bone': ['skeletal', 'osseous', 'bone tissue'],
@@ -192,7 +215,7 @@ class PubMedRetriever:
             'ligament': ['connective tissue', 'joint stabilizer'],
             'fracture': ['bone break', 'skeletal injury'],
             'arthritis': ['joint inflammation', 'articular disease'],
-            
+
             # Dermatology
             'skin': ['dermal', 'cutaneous', 'integumentary'],
             'epidermis': ['outer skin layer', 'skin surface'],
@@ -202,7 +225,7 @@ class PubMedRetriever:
             'wound': ['injury', 'tissue damage'],
             'healing': ['repair', 'tissue regeneration'],
             'scar': ['tissue repair', 'healed wound'],
-            
+
             # Ophthalmology
             'eye': ['ocular', 'ophthalmic', 'visual organ'],
             'retina': ['retinal', 'visual layer'],
@@ -212,7 +235,7 @@ class PubMedRetriever:
             'cataract': ['lens opacity', 'vision clouding'],
             'macula': ['retinal region', 'central vision'],
             'optic': ['visual', 'sight-related'],
-            
+
             # Otolaryngology
             'ear': ['aural', 'otologic', 'hearing organ'],
             'nose': ['nasal', 'rhinologic', 'olfactory organ'],
@@ -222,7 +245,7 @@ class PubMedRetriever:
             'smell': ['olfaction', 'olfactory sense'],
             'taste': ['gustation', 'gustatory sense'],
             'voice': ['vocal', 'speech production'],
-            
+
             # Urology
             'kidney': ['renal', 'nephric', 'urinary organ'],
             'bladder': ['urinary bladder', 'storage organ'],
@@ -232,7 +255,7 @@ class PubMedRetriever:
             'nephritis': ['kidney inflammation', 'renal inflammation'],
             'cystitis': ['bladder inflammation', 'urinary inflammation'],
             'urolithiasis': ['kidney stones', 'urinary calculi'],
-            
+
             # Obstetrics and Gynecology
             'pregnancy': ['gestation', 'prenatal period'],
             'fetus': ['developing baby', 'unborn child'],
@@ -242,7 +265,7 @@ class PubMedRetriever:
             'menstruation': ['menstrual cycle', 'period'],
             'fertility': ['reproductive capacity', 'conception ability'],
             'contraception': ['birth control', 'family planning'],
-            
+
             # Pediatrics
             'child': ['pediatric', 'young patient'],
             'infant': ['newborn', 'baby'],
@@ -251,8 +274,8 @@ class PubMedRetriever:
             'vaccination': ['immunization', 'preventive care'],
             'nutrition': ['diet', 'feeding'],
             'milestone': ['developmental stage', 'growth marker'],
-            'pediatric': ['child-related', 'children's health'],
-            
+            'pediatric': ['child-related', 'child health specialist'],
+
             # Geriatrics
             'aging': ['senescence', 'elderly'],
             'elderly': ['geriatric', 'senior'],
@@ -262,7 +285,7 @@ class PubMedRetriever:
             'longevity': ['life span', 'life expectancy'],
             'senescence': ['aging', 'biological aging'],
             'geriatric': ['elderly care', 'aging-related'],
-            
+
             # Emergency Medicine
             'emergency': ['urgent', 'acute'],
             'trauma': ['injury', 'physical damage'],
@@ -272,7 +295,7 @@ class PubMedRetriever:
             'acute': ['sudden', 'severe'],
             'stabilization': ['stabilizing', 'emergency care'],
             'triage': ['patient sorting', 'priority assessment'],
-            
+
             # Radiology
             'imaging': ['radiological', 'diagnostic imaging'],
             'x-ray': ['radiograph', 'radiation image'],
@@ -282,7 +305,7 @@ class PubMedRetriever:
             'radiation': ['radiological', 'ionizing radiation'],
             'contrast': ['imaging agent', 'radiological dye'],
             'scan': ['imaging study', 'diagnostic scan'],
-            
+
             # Laboratory Medicine
             'test': ['laboratory test', 'diagnostic test'],
             'sample': ['specimen', 'biological sample'],
@@ -292,7 +315,7 @@ class PubMedRetriever:
             'quality': ['test quality', 'laboratory quality'],
             'validation': ['test validation', 'method validation'],
             'calibration': ['standardization', 'measurement calibration'],
-            
+
             # Public Health
             'epidemiology': ['disease study', 'population health'],
             'prevention': ['preventive care', 'disease prevention'],
@@ -302,7 +325,7 @@ class PubMedRetriever:
             'pandemic': ['global outbreak', 'worldwide epidemic'],
             'vaccination': ['immunization', 'preventive vaccination'],
             'quarantine': ['isolation', 'containment'],
-            
+
             # Medical Research
             'study': ['research', 'investigation'],
             'trial': ['clinical trial', 'research study'],
@@ -316,22 +339,22 @@ class PubMedRetriever:
 
         # Add original words
         expanded_words.extend(words)
-        
+
         # Add expanded terms
         for word in words:
             if word in medical_terms:
                 expanded_words.extend(medical_terms[word])
-        
+
         # Add bigrams for better context matching
-        bigrams = [' '.join(words[i:i+2]) for i in range(len(words)-1)]
+        bigrams = [' '.join(words[i:i + 2]) for i in range(len(words) - 1)]
         for bigram in bigrams:
             if bigram in medical_terms:
                 expanded_words.extend(medical_terms[bigram])
-        
+
         # Remove duplicates while preserving order
         seen = set()
         expanded_words = [x for x in expanded_words if not (x in seen or seen.add(x))]
-        
+
         expanded_query = " ".join(expanded_words)
         logger.info(f"Expanded query: {expanded_query}")
         return expanded_query
@@ -351,7 +374,7 @@ class PubMedRetriever:
             scores, examples = self.dataset.get_nearest_examples_batch(
                 "embeddings",
                 queries=encoded_input,
-                k=top_k,
+                k=top_k
             )
 
             # Log the structure of examples
@@ -370,7 +393,6 @@ class PubMedRetriever:
             # Add dense results
             for i, (score, example) in enumerate(zip(scores[0], examples[0])):
                 if i not in seen_indices:
-                    # Safely get text from example
                     text = example.get('text', '') if isinstance(example, dict) else str(example)
                     combined_results.append({
                         'text': text,
@@ -404,47 +426,62 @@ class PubMedRetriever:
 
         # Prepare pairs for reranking
         pairs = [(query, candidate['text']) for candidate in candidates]
-        
+
         # Get reranking scores
         rerank_scores = self.reranker.predict(pairs)
-        
+
         # Combine original scores with reranking scores
         for candidate, score in zip(candidates, rerank_scores):
             candidate['rerank_score'] = float(score)
             # Adjust weights to favor reranking more for medical queries
             candidate['final_score'] = 0.9 * candidate['rerank_score'] + 0.1 * candidate['score']
-        
+
         # Sort by final score
         reranked = sorted(candidates, key=lambda x: x['final_score'], reverse=True)
-        
+
         # Log top results for debugging
         logger.info("Top 3 reranked results:")
         for i, result in enumerate(reranked[:3]):
-            logger.info(f"Rank {i+1} - Score: {result['final_score']:.4f}")
+            logger.info(f"Rank {i + 1} - Score: {result['final_score']:.4f}")
             logger.info(f"Text: {result['text'][:200]}...")
-        
+
         return reranked[:top_k]
 
     def retrieve(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """
-        Enhanced retrieval with query expansion, hybrid search, and reranking.
-
-        Args:
-            query: The search query
-            top_k: Number of results to return
-
-        Returns:
-            List of dictionaries containing retrieved texts and their scores
+        Retrieve relevant contexts using hybrid search and reranking.
         """
-        # Expand query
+        logger.info(f"Processing query: {query}")
+
+        # Expand query with medical terms
         expanded_query = self._expand_query(query)
-        logger.info(f"Original query: {query}")
         logger.info(f"Expanded query: {expanded_query}")
 
-        # Perform hybrid search
+        # Get initial candidates using hybrid search
         candidates = self._hybrid_search(expanded_query, top_k=20)
 
-        # Rerank results
-        final_results = self._rerank(query, candidates, top_k)
+        # Filter out irrelevant contexts based on keyword matching
+        query_words = set(query.lower().split())
+        filtered_candidates = []
+        for candidate in candidates:
+            text = candidate['text'].lower()
+            # Check if at least 2 significant query words appear in the text
+            matching_words = sum(1 for word in query_words if len(word) > 3 and word in text)
+            if matching_words >= 2:
+                filtered_candidates.append(candidate)
 
-        return final_results
+        # Rerank the filtered candidates
+        reranked_results = self._rerank(query, filtered_candidates, top_k)
+
+        # Additional relevance check
+        final_results = []
+        for result in reranked_results:
+            if result['score'] > 0.5:  # Only include high confidence results
+                final_results.append(result)
+
+        if not final_results:
+            logger.warning("No highly relevant contexts found")
+            # Return best available if no high confidence results
+            return reranked_results[:2] if reranked_results else []
+
+        return final_results[:2]  # Return top 2 most relevant contexts
