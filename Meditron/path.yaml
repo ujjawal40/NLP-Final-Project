@@ -3,8 +3,13 @@ data:
     artificial: "../Dataset/pubmedqa_artificial.parquet"
     labeled: "../Dataset/pubmedqa_labeled.parquet"
   processed: "../Dataset/processed/"
-  vector_db: "../Dataset/processed/vector_db.faiss"
+  vector_db: "../Dataset/processed/vector_db/index.faiss"
 
 models:
   meditron: "epfl-llm/meditron-7b"
   embedding: "sentence-transformers/all-mpnet-base-v2"
+
+dataset_dir: "../Dataset/processed/contexts_dataset"
+index_path: "../Dataset/processed/vector_db/index.faiss"
+model_path: "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract"
+reranker_path: "cross-encoder/ms-marco-MiniLM-L-6-v2"
